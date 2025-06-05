@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     fs::File,
-    io::{self, ErrorKind},
+    io::ErrorKind,
     os::fd::AsRawFd,
     sync::{
         Arc,
@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Context;
 use mio::{Events, Interest, Poll, Token, unix::SourceFd};
 use thiserror::Error;
 use timerfd::TimerFd;
@@ -43,12 +42,32 @@ pub struct MountWatch {
     stop_flag: Arc<AtomicBool>,
 }
 
+/// Error in `MountWatch` setup.
+#[derive(Debug, Error)]
+#[error("MountWatch setup error")]
+pub struct SetupError(#[source] ErrorImpl);
+
+/// Private error type: I don't want to expose it for the moment.
+#[derive(Debug, Error)]
+enum ErrorImpl {
+    #[error("read error")]
+    MountRead(#[from] ReadError),
+    #[error("failed to initialize epoll")]
+    PollInit(#[source] std::io::Error),
+    #[error("poll.poll() returned an error")]
+    PollPoll(#[source] std::io::Error),
+    #[error("failed to register a timer to epoll")]
+    PollTimer(#[source] std::io::Error),
+    #[error("could not set up a timer with delay {0:?} for event coalescing")]
+    Timerfd(Duration, #[source] std::io::Error),
+}
+
 impl MountWatch {
     /// Watches the list of mounted filesystems and executes the `callback` when it changes.
     pub fn new(
         callback: impl FnMut(MountEvent) -> WatchControl + Send + 'static,
-    ) -> anyhow::Result<Self> {
-        watch_mounts(callback)
+    ) -> Result<Self, SetupError> {
+        watch_mounts(callback).map_err(SetupError)
     }
 
     /// Stops the waiting thread and wait for it to terminate.
@@ -178,12 +197,12 @@ impl<F: FnMut(MountEvent) -> WatchControl> State<F> {
         Ok(res)
     }
 
-    fn start_coalescing(&mut self, delay: Duration, poll: &Poll) -> io::Result<()> {
+    fn start_coalescing(&mut self, delay: Duration, poll: &Poll) -> Result<(), ErrorImpl> {
         log::trace!("start coalescing for {delay:?}");
         let mut register = false;
         if self.coalesce_timer.is_none() {
             // create the timer, don't register it yet because it is not configured
-            self.coalesce_timer = Some(TimerFd::new()?);
+            self.coalesce_timer = Some(TimerFd::new().map_err(|e| ErrorImpl::Timerfd(delay, e))?);
             register = true;
             log::trace!("timerfd created");
         }
@@ -200,7 +219,8 @@ impl<F: FnMut(MountEvent) -> WatchControl> State<F> {
             let fd = timer.as_raw_fd();
             let mut source = SourceFd(&fd);
             poll.registry()
-                .register(&mut source, TIMER_TOKEN, Interest::READABLE)?;
+                .register(&mut source, TIMER_TOKEN, Interest::READABLE)
+                .map_err(ErrorImpl::PollTimer)?;
             log::trace!("timerfd registered");
         }
         // set the coalescing flag
@@ -212,27 +232,27 @@ impl<F: FnMut(MountEvent) -> WatchControl> State<F> {
 /// Starts a background thread that uses [`mio::poll`] (backed by `epoll`) to detect changes to the mounted filesystem.
 fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
     callback: F,
-) -> anyhow::Result<MountWatch> {
+) -> Result<MountWatch, ErrorImpl> {
     // Open the file that contains info about the mounted filesystems.
-    let mut file = File::open(PROC_MOUNTS_PATH)
-        .with_context(|| format!("failed to open {PROC_MOUNTS_PATH}"))?;
+    let mut file =
+        File::open(PROC_MOUNTS_PATH).map_err(|e| ErrorImpl::MountRead(ReadError::Io(e)))?;
     let fd = file.as_raw_fd();
     let mut fd = SourceFd(&fd);
 
     // Prepare epoll.
     // According to `man proc_mounts`, a filesystem mount or unmount causes
     // `poll` and `epoll_wait` to mark the file as having a PRIORITY event.
-    let mut poll = Poll::new().context("poll init failed")?;
+    let mut poll = Poll::new().map_err(|e| ErrorImpl::PollInit(e))?;
     poll.registry()
         .register(&mut fd, MOUNT_TOKEN, Interest::PRIORITY)
-        .with_context(|| format!("poll registration of {PROC_MOUNTS_PATH:?} failed"))?;
+        .map_err(|e| ErrorImpl::PollInit(e))?;
 
     // Keep a boolean to stop the thread from the outside.
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_thread = stop_flag.clone();
 
     // Declare the polling loop separately to handle errors in a nicer way.
-    let poll_loop = move || -> anyhow::Result<()> {
+    let poll_loop = move || -> Result<(), ErrorImpl> {
         let mut events = Events::with_capacity(8); // we don't expect many events
         let mut state = State::new(callback);
 
@@ -242,9 +262,7 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
             WatchControl::Continue => (),
             WatchControl::Stop => return Ok(()),
             WatchControl::Coalesce { delay } => {
-                state
-                    .start_coalescing(delay, &poll)
-                    .context("error in timer setup for WatchControl::coalesce")?;
+                state.start_coalescing(delay, &poll)?;
             }
         }
 
@@ -254,7 +272,7 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
                 if e.kind() == ErrorKind::Interrupted {
                     continue; // retry
                 } else {
-                    return Err(e.into()); // propagate error
+                    return Err(ErrorImpl::PollPoll(e)); // propagate error
                 }
             }
 
@@ -269,9 +287,7 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
                     WatchControl::Continue => (),
                     WatchControl::Stop => break,
                     WatchControl::Coalesce { delay } => {
-                        state
-                            .start_coalescing(delay, &poll)
-                            .context("error in timer setup for WatchControl::coalesce")?;
+                        state.start_coalescing(delay, &poll)?;
                     }
                 }
             }
