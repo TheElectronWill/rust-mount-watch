@@ -4,20 +4,20 @@ use std::{
     io::ErrorKind,
     os::fd::AsRawFd,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
     thread::JoinHandle,
     time::Duration,
 };
 
-use mio::{Events, Interest, Poll, Token, unix::SourceFd};
+use mio::{unix::SourceFd, Events, Interest, Poll, Token};
 use thiserror::Error;
 use timerfd::TimerFd;
 
 use crate::mount::ReadError;
 
-use super::mount::{LinuxMount, read_proc_mounts};
+use super::mount::{read_proc_mounts, LinuxMount};
 
 /// `MountWatch` allows to react to changes in the mounted filesystems.
 ///

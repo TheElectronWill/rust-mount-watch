@@ -1,6 +1,9 @@
 //! Parse /proc/mounts.
 
-use std::{fs::File, io::{Read, Seek}};
+use std::{
+    fs::File,
+    io::{Read, Seek},
+};
 
 use thiserror::Error;
 
@@ -67,7 +70,7 @@ pub(crate) fn parse_proc_mounts(
     buf: &mut Vec<LinuxMount>,
 ) -> Result<(), ParseError> {
     for line in content.lines() {
-        let line = line.trim_ascii_start();
+        let line = line.trim_start_matches(|c: char| c.is_ascii_whitespace());
         if !line.is_empty() && !line.starts_with('#') {
             let m = LinuxMount::parse(line).ok_or_else(|| ParseError {
                 input: line.to_owned(),
@@ -82,7 +85,7 @@ pub(crate) fn parse_proc_mounts(
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use super::{LinuxMount, parse_proc_mounts};
+    use super::{parse_proc_mounts, LinuxMount};
 
     fn vec_str(values: &[&str]) -> Vec<String> {
         values.into_iter().map(|s| s.to_string()).collect()
