@@ -1,4 +1,4 @@
-# Mount watch
+# Mount Watcher
 
 Get notified when a filesystem is mounted/unmounted! (Linux only)
 
@@ -8,6 +8,9 @@ Key features:
 - Emits high-level events with the newly mounted/unmounted filesystems.
 - Can be stopped from the event handler, or from the outside.
 - Can coalesce multiple events into one, on demand.
+
+[![Crates.io Version](https://img.shields.io/crates/v/mount-watcher)](https://crates.io/mount-watcher)
+[![docs.rs](https://img.shields.io/docsrs/mount-watcher)](https://docs.rs/mount-watcher)
 
 ## Example
 
@@ -21,5 +24,5 @@ let watch = MountWatcher::new(|event| {
     }
     WatchControl::Continue
 });
-// store the watch somewhere (it will stop on drop)
+// store the watcher somewhere (it will stop on drop)
 ```

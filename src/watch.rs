@@ -25,15 +25,15 @@ use super::mount::{read_proc_mounts, LinuxMount};
 ///
 /// # Stopping
 ///
-/// When the `MountWatcher` is dropped, the background thread that drives the watch is stopped, and the callback will never be called again.
+/// When the `MountWatcher` is dropped, the background thread that drives the watcher is stopped, and the callback will never be called again.
 /// You can also call [`stop`](Self::stop).
 ///
-/// Furthermore, you can stop the watch from the event handler itself, by returning [`WatchControl::Stop`].
+/// Furthermore, you can stop the watcher from the event handler itself, by returning [`WatchControl::Stop`].
 ///
 /// # Example (stop in handler)
 ///
 /// ```no_run
-/// use mount_watch::{MountWatcher, WatchControl};
+/// use mount_watcher::{MountWatcher, WatchControl};
 ///
 /// let watch = MountWatcher::new(|event| {
 ///     let added_mounts = event.mounted;
@@ -47,7 +47,7 @@ use super::mount::{read_proc_mounts, LinuxMount};
 ///         WatchControl::Continue
 ///     }
 /// }).unwrap();
-/// // Wait for the watch to be stopped by the handler
+/// // Wait for the watcher to be stopped by the handler
 /// watch.join().unwrap();
 /// ```
 pub struct MountWatcher {

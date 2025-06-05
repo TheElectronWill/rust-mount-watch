@@ -28,8 +28,8 @@ pub enum CoalesceInitial {
 ///
 /// ```no_run
 /// use std::time::Duration;
-/// use mount_watch::MountWatcher;
-/// use mount_watch::callback::{coalesce, CoalesceInitial};
+/// use mount_watcher::MountWatcher;
+/// use mount_watcher::callback::{coalesce, CoalesceInitial};
 ///
 /// let watch = MountWatcher::new(
 ///     coalesce(

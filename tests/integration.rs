@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use mount_watch::{MountEvent, MountWatcher, WatchControl};
+use mount_watcher::{MountEvent, MountWatcher, WatchControl};
 
 /*
 NOTE: These tests are for manual testing, because it's quite hard to automate it (it requires to mount/unmount filesystems as root).
 
 To run, remove the ignore attribute and run:
-RUST_LOG=debug cargo test --package mount-watch --test integration -- watch_coalesce_print --exact --show-output --nocapture
+RUST_LOG=debug cargo test --package mount-watcher --test integration -- watch_coalesce_print --exact --show-output --nocapture
 
 And, in parallel (in another terminal), mount and unmount filesystems to see if the callback is called at the right time and with the right arguments.
 */
@@ -16,7 +16,7 @@ And, in parallel (in another terminal), mount and unmount filesystems to see if 
 fn watch_print() {
     env_logger::init();
 
-    let watch = MountWatcher::new(|event| {
+    let _watch = MountWatcher::new(|event| {
         print_event(event);
         println!("---------------");
 

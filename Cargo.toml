@@ -1,9 +1,11 @@
 [package]
-name = "mount-watch"
+name = "mount-watcher"
 version = "0.3.0"
 edition = "2021"
 description = "Get notified when a filesystem is mounted/unmounted"
 rust-version = "1.71"
+license = "Apache-2.0"
+repository = "https://github.com/TheElectronWill/rust-mount-watcher/"
 
 [dependencies]
 log = "0.4.27"

@@ -6,7 +6,7 @@
 //! mount/unmount events.
 //!
 //! ```
-//! use mount_watch::{MountWatcher, WatchControl};
+//! use mount_watcher::{MountWatcher, WatchControl};
 //!
 //! let watch = MountWatcher::new(|event| {
 //!     if event.initial {
@@ -17,7 +17,7 @@
 //!     }
 //!     WatchControl::Continue
 //! });
-//! // store the watch somewhere (it will stop on drop)
+//! // store the watcher somewhere (it will stop on drop)
 //! ```
 //!
 //! # Advanced features

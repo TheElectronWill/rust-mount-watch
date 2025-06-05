@@ -179,7 +179,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mount-watch"
+name = "mount-watcher"
 version = "0.3.0"
 dependencies = [
  "env_logger",
