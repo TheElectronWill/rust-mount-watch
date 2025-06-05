@@ -10,6 +10,8 @@ use thiserror::Error;
 pub const PROC_MOUNTS_PATH: &str = "/proc/mounts";
 
 /// A mounted filesystem.
+///
+/// See `man fstab` for a detailed description of the fields.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct LinuxMount {
     pub spec: String,
@@ -20,12 +22,14 @@ pub struct LinuxMount {
     pub fsck_fs_passno: u32,
 }
 
+/// Error while parsing `/proc/mounts`.
 #[derive(Debug, Error)]
 #[error("invalid mount line: {input}")]
 pub struct ParseError {
     pub(crate) input: String,
 }
 
+/// Error while reading/parsing `/proc/mounts`.
 #[derive(Debug, Error)]
 pub enum ReadError {
     #[error("failed to parse {PROC_MOUNTS_PATH}")]
@@ -56,6 +60,7 @@ impl LinuxMount {
     }
 }
 
+/// Reads `/proc/mounts` from the beginning and parses its content.
 pub(crate) fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadError> {
     let mut content = String::with_capacity(4096);
     file.rewind()?;
@@ -65,6 +70,7 @@ pub(crate) fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadE
     Ok(mounts)
 }
 
+/// Parses the content of `/proc/mounts`.
 pub(crate) fn parse_proc_mounts(
     content: &str,
     buf: &mut Vec<LinuxMount>,

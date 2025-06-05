@@ -1,3 +1,5 @@
+//! Main module.
+
 use std::{
     collections::HashSet,
     fs::File,
@@ -19,32 +21,43 @@ use crate::mount::ReadError;
 
 use super::mount::{read_proc_mounts, LinuxMount};
 
-/// `MountWatch` allows to react to changes in the mounted filesystems.
+/// `MountWatcher` allows to react to changes in the mounted filesystems.
 ///
 /// # Stopping
 ///
-/// When the `MountWatch` is dropped, the background thread that drives the watch is stopped, and the callback will never be called again.
+/// When the `MountWatcher` is dropped, the background thread that drives the watch is stopped, and the callback will never be called again.
 /// You can also call [`stop`](Self::stop).
 ///
-/// # Example
+/// Furthermore, you can stop the watch from the event handler itself, by returning [`WatchControl::Stop`].
 ///
-/// ```
-/// use mount_watch::MountWatch;
+/// # Example (stop in handler)
 ///
-/// let wait = MountWatch::new(|event| {
+/// ```no_run
+/// use mount_watch::{MountWatcher, WatchControl};
+///
+/// let watch = MountWatcher::new(|event| {
 ///     let added_mounts = event.mounted;
 ///     let removed_mounts = event.unmounted;
-///     todo!()
-/// });
+///     let stop_condition = todo!();
+///     if stop_condition {
+///         // I have found what I wanted, stop here.
+///         WatchControl::Stop
+///     } else {
+///         // Continue to watch, I still want events.
+///         WatchControl::Continue
+///     }
+/// }).unwrap();
+/// // Wait for the watch to be stopped by the handler
+/// watch.join().unwrap();
 /// ```
-pub struct MountWatch {
+pub struct MountWatcher {
     thread_handle: Option<JoinHandle<()>>,
     stop_flag: Arc<AtomicBool>,
 }
 
-/// Error in `MountWatch` setup.
+/// Error in `MountWatcher` setup.
 #[derive(Debug, Error)]
-#[error("MountWatch setup error")]
+#[error("MountWatcher setup error")]
 pub struct SetupError(#[source] ErrorImpl);
 
 /// Private error type: I don't want to expose it for the moment.
@@ -62,7 +75,7 @@ enum ErrorImpl {
     Timerfd(Duration, #[source] std::io::Error),
 }
 
-impl MountWatch {
+impl MountWatcher {
     /// Watches the list of mounted filesystems and executes the `callback` when it changes.
     pub fn new(
         callback: impl FnMut(MountEvent) -> WatchControl + Send + 'static,
@@ -84,7 +97,7 @@ impl MountWatch {
     }
 }
 
-impl Drop for MountWatch {
+impl Drop for MountWatcher {
     fn drop(&mut self) {
         if self.thread_handle.is_some() {
             self.stop_flag.store(true, Ordering::Relaxed);
@@ -110,6 +123,7 @@ pub struct MountEvent {
     pub initial: bool,
 }
 
+/// Value returned by the event handler to control the [`MountWatcher`].
 pub enum WatchControl {
     /// Continue watching.
     Continue,
@@ -232,7 +246,7 @@ impl<F: FnMut(MountEvent) -> WatchControl> State<F> {
 /// Starts a background thread that uses [`mio::poll`] (backed by `epoll`) to detect changes to the mounted filesystem.
 fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
     callback: F,
-) -> Result<MountWatch, ErrorImpl> {
+) -> Result<MountWatcher, ErrorImpl> {
     // Open the file that contains info about the mounted filesystems.
     let mut file =
         File::open(PROC_MOUNTS_PATH).map_err(|e| ErrorImpl::MountRead(ReadError::Io(e)))?;
@@ -306,7 +320,7 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
     });
 
     // Return a structure that will stop the polling when dropped.
-    Ok(MountWatch {
+    Ok(MountWatcher {
         thread_handle: Some(thread_handle),
         stop_flag,
     })

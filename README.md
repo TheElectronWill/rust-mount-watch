@@ -12,7 +12,7 @@ Key features:
 ## Example
 
 ```rs
-let watch = MountWatch::new(|event| {
+let watch = MountWatcher::new(|event| {
     if event.initial {
         println!("initial mount points: {:?}", event.mounted);
     } else {
