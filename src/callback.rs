@@ -1,0 +1,56 @@
+//! Callback helpers.
+
+use std::time::Duration;
+
+use crate::{MountEvent, WatchControl};
+
+pub enum CoalesceInitial {
+    Coalesce,
+    PassImmediately,
+}
+
+/// Returns a closure that always coalesce the events with the given delay.
+///
+/// By passing it to [`MountWatch::new`](crate::MountWatch::new), you will only
+/// get events at the specified time interval.
+///
+/// # Initial event
+///
+/// The first, initial event is handled according to the value of `initial_event`.
+/// It can be useful to use `PassImmediately` to get a first list of the mount points
+/// as soon as possible.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use mount_watch::MountWatch;
+/// use mount_watch::callback::{coalesce, CoalesceInitial};
+///
+/// let watch = MountWatch::new(
+///     coalesce(
+///         Duration::from_secs(5),
+///         CoalesceInitial::PassImmediately,
+///         |event| {
+///             todo!("handle event")
+///         }
+///     )
+/// );
+/// ```
+pub fn coalesce<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
+    delay: Duration,
+    initial_event: CoalesceInitial,
+    mut f: F,
+) -> impl FnMut(MountEvent) -> WatchControl + Send + 'static {
+    move |event| {
+        let coalesce = match initial_event {
+            CoalesceInitial::Coalesce => !event.coalesced,
+            CoalesceInitial::PassImmediately => !(event.coalesced || event.initial),
+        };
+        if coalesce {
+            WatchControl::Coalesce { delay }
+        } else {
+            f(event)
+        }
+    }
+}
