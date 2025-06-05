@@ -9,7 +9,7 @@ Key features:
 - Can be stopped from the event handler, or from the outside.
 - Can coalesce multiple events into one, on demand.
 
-[![Crates.io Version](https://img.shields.io/crates/v/mount-watcher)](https://crates.io/mount-watcher)
+[![Crates.io Version](https://img.shields.io/crates/v/mount-watcher)](https://crates.io/crates/mount-watcher)
 [![docs.rs](https://img.shields.io/docsrs/mount-watcher)](https://docs.rs/mount-watcher)
 
 ## Example
