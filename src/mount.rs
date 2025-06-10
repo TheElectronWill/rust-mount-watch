@@ -61,20 +61,17 @@ impl LinuxMount {
 }
 
 /// Reads `/proc/mounts` from the beginning and parses its content.
-pub(crate) fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadError> {
+pub fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadError> {
     let mut content = String::with_capacity(4096);
     file.rewind()?;
-    file.read_to_string(&mut content).map_err(ReadError::from)?;
+    file.read_to_string(&mut content)?;
     let mut mounts = Vec::with_capacity(64);
-    parse_proc_mounts(&content, &mut mounts).map_err(ReadError::from)?;
+    parse_proc_mounts(&content, &mut mounts)?;
     Ok(mounts)
 }
 
-/// Parses the content of `/proc/mounts`.
-pub(crate) fn parse_proc_mounts(
-    content: &str,
-    buf: &mut Vec<LinuxMount>,
-) -> Result<(), ParseError> {
+/// Parses the content of `/proc/mounts` and stores the result in `buf`.
+pub fn parse_proc_mounts(content: &str, buf: &mut Vec<LinuxMount>) -> Result<(), ParseError> {
     for line in content.lines() {
         let line = line.trim_start_matches(|c: char| c.is_ascii_whitespace());
         if !line.is_empty() && !line.starts_with('#') {
