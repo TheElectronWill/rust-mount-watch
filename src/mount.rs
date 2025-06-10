@@ -39,9 +39,9 @@ pub enum ReadError {
 }
 
 impl LinuxMount {
-    /// Attempts to parse a line of `/proc/mounts`.
+    /// Attempts to parse one line of `/proc/mounts`.
     /// Returns `None` if it fails.
-    pub(crate) fn parse(line: &str) -> Option<Self> {
+    pub fn parse(line: &str) -> Option<Self> {
         let mut fields = line.split_ascii_whitespace().into_iter();
         let spec = fields.next()?.to_string();
         let mount_point = fields.next()?.to_string();
@@ -60,8 +60,14 @@ impl LinuxMount {
     }
 }
 
+/// Returns the filesystems that are currently mounted.
+pub fn list_current_mounts() -> Result<Vec<LinuxMount>, ReadError> {
+    let mut file = File::open(PROC_MOUNTS_PATH)?;
+    read_proc_mounts(&mut file)
+}
+
 /// Reads `/proc/mounts` from the beginning and parses its content.
-pub fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadError> {
+pub(crate) fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadError> {
     let mut content = String::with_capacity(4096);
     file.rewind()?;
     file.read_to_string(&mut content)?;
@@ -71,7 +77,10 @@ pub fn read_proc_mounts(file: &mut File) -> Result<Vec<LinuxMount>, ReadError> {
 }
 
 /// Parses the content of `/proc/mounts` and stores the result in `buf`.
-pub fn parse_proc_mounts(content: &str, buf: &mut Vec<LinuxMount>) -> Result<(), ParseError> {
+pub(crate) fn parse_proc_mounts(
+    content: &str,
+    buf: &mut Vec<LinuxMount>,
+) -> Result<(), ParseError> {
     for line in content.lines() {
         let line = line.trim_start_matches(|c: char| c.is_ascii_whitespace());
         if !line.is_empty() && !line.starts_with('#') {

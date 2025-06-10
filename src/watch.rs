@@ -83,7 +83,7 @@ impl MountWatcher {
         watch_mounts(callback).map_err(SetupError)
     }
 
-    /// Requests the waiting thread to terminate.
+    /// Requests the background thread to terminate.
     ///
     /// To wait for the termination, use [`join`].
     pub fn stop(&self) {
