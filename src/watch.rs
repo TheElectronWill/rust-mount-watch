@@ -83,15 +83,19 @@ impl MountWatcher {
         watch_mounts(callback).map_err(SetupError)
     }
 
-    /// Stops the waiting thread and wait for it to terminate.
+    /// Requests the waiting thread to terminate.
     ///
-    /// # Errors
-    /// If the thread has panicked, an error is returned with the panic payload.
-    pub fn stop(mut self) -> std::thread::Result<()> {
+    /// To wait for the termination, use [`join`].
+    pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::Relaxed);
-        self.thread_handle.take().unwrap().join()
     }
 
+    /// Waits for the background thread to terminate.
+    ///
+    /// This blocks the current thread.
+    ///
+    /// # Errors
+    /// If the background thread has panicked, an error is returned with the panic payload.
     pub fn join(mut self) -> std::thread::Result<()> {
         self.thread_handle.take().unwrap().join()
     }
@@ -100,7 +104,7 @@ impl MountWatcher {
 impl Drop for MountWatcher {
     fn drop(&mut self) {
         if self.thread_handle.is_some() {
-            self.stop_flag.store(true, Ordering::Relaxed);
+            self.stop();
         }
     }
 }
