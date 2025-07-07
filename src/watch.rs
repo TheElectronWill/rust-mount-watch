@@ -1,19 +1,11 @@
 //! Main module.
 
 use std::{
-    collections::HashSet,
-    fs::File,
-    io::ErrorKind,
-    os::fd::AsRawFd,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    thread::JoinHandle,
+    collections::HashSet, fs::File, io::ErrorKind, os::fd::AsRawFd, sync::Arc, thread::JoinHandle,
     time::Duration,
 };
 
-use mio::{unix::SourceFd, Events, Interest, Poll, Token};
+use mio::{unix::SourceFd, Events, Interest, Poll, Token, Waker};
 use thiserror::Error;
 use timerfd::TimerFd;
 
@@ -52,13 +44,18 @@ use super::mount::{read_proc_mounts, LinuxMount};
 /// ```
 pub struct MountWatcher {
     thread_handle: Option<JoinHandle<()>>,
-    stop_flag: Arc<AtomicBool>,
+    stop_waker: Arc<Waker>,
 }
 
 /// Error in `MountWatcher` setup.
 #[derive(Debug, Error)]
 #[error("MountWatcher setup error")]
 pub struct SetupError(#[source] ErrorImpl);
+
+/// Error in [`MountWatcher::stop`].
+#[derive(Debug, Error)]
+#[error("MountWatcher stop error")]
+pub struct StopError(#[source] ErrorImpl);
 
 /// Private error type: I don't want to expose it for the moment.
 #[derive(Debug, Error)]
@@ -73,6 +70,8 @@ enum ErrorImpl {
     PollTimer(#[source] std::io::Error),
     #[error("could not set up a timer with delay {0:?} for event coalescing")]
     Timerfd(Duration, #[source] std::io::Error),
+    #[error("failed to stop epoll from another thread")]
+    Stop(#[source] std::io::Error),
 }
 
 impl MountWatcher {
@@ -85,9 +84,11 @@ impl MountWatcher {
 
     /// Requests the background thread to terminate.
     ///
-    /// To wait for the termination, use [`join`].
-    pub fn stop(&self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+    /// To wait for the termination, use [`join`](Self::join).
+    pub fn stop(&self) -> Result<(), StopError> {
+        self.stop_waker
+            .wake()
+            .map_err(|e| StopError(ErrorImpl::Stop(e)))
     }
 
     /// Waits for the background thread to terminate.
@@ -104,7 +105,7 @@ impl MountWatcher {
 impl Drop for MountWatcher {
     fn drop(&mut self) {
         if self.thread_handle.is_some() {
-            self.stop();
+            let _ = self.stop();
         }
     }
 }
@@ -142,6 +143,7 @@ pub enum WatchControl {
 
 const MOUNT_TOKEN: Token = Token(0);
 const TIMER_TOKEN: Token = Token(1);
+const STOP_TOKEN: Token = Token(2);
 const POLL_TIMEOUT: Duration = Duration::from_secs(5);
 const PROC_MOUNTS_PATH: &str = "/proc/mounts";
 
@@ -258,16 +260,16 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
     let mut fd = SourceFd(&fd);
 
     // Prepare epoll.
+    let mut poll = Poll::new().map_err(ErrorImpl::PollInit)?;
+
+    // Create a mean to wake epoll from another thread.
+    let stop_waker = Waker::new(poll.registry(), STOP_TOKEN).map_err(ErrorImpl::PollInit)?;
+
     // According to `man proc_mounts`, a filesystem mount or unmount causes
     // `poll` and `epoll_wait` to mark the file as having a PRIORITY event.
-    let mut poll = Poll::new().map_err(|e| ErrorImpl::PollInit(e))?;
     poll.registry()
         .register(&mut fd, MOUNT_TOKEN, Interest::PRIORITY)
-        .map_err(|e| ErrorImpl::PollInit(e))?;
-
-    // Keep a boolean to stop the thread from the outside.
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let stop_flag_thread = stop_flag.clone();
+        .map_err(ErrorImpl::PollInit)?;
 
     // Declare the polling loop separately to handle errors in a nicer way.
     let poll_loop = move || -> Result<(), ErrorImpl> {
@@ -299,8 +301,13 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
             if let Some(event) = events.iter().next() {
                 log::debug!("event on /proc/mounts: {event:?}");
 
+                // the stop_waker has been triggered, which means that we must stop now
+                if event.token() == STOP_TOKEN {
+                    break; // stop
+                }
+
                 // parse mount file and react to changes
-                let coalesced = dbg!(event.token() == TIMER_TOKEN);
+                let coalesced = event.token() == TIMER_TOKEN;
                 match state.check_diff(&mut file, coalesced, false)? {
                     WatchControl::Continue => (),
                     WatchControl::Stop => break,
@@ -309,9 +316,6 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
                     }
                 }
             }
-            if stop_flag_thread.load(Ordering::Relaxed) {
-                break;
-            }
         }
         Ok(())
     };
@@ -319,13 +323,13 @@ fn watch_mounts<F: FnMut(MountEvent) -> WatchControl + Send + 'static>(
     // Spawn a thread.
     let thread_handle = std::thread::spawn(move || {
         if let Err(e) = poll_loop() {
-            log::error!("error in poll loop: {e:?}");
+            log::error!("error in polling loop: {e:?}");
         }
     });
 
     // Return a structure that will stop the polling when dropped.
     Ok(MountWatcher {
         thread_handle: Some(thread_handle),
-        stop_flag,
+        stop_waker: Arc::new(stop_waker),
     })
 }

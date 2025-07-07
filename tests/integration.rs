@@ -16,14 +16,36 @@ And, in parallel (in another terminal), mount and unmount filesystems to see if 
 fn watch_print() {
     env_logger::init();
 
-    let _watch = MountWatcher::new(|event| {
+    let watch = MountWatcher::new(|event| {
         print_event(event);
         println!("---------------");
 
         WatchControl::Continue
     })
     .unwrap();
-    std::thread::sleep(Duration::from_secs(60));
+    std::thread::sleep(Duration::from_secs(30));
+    log::debug!("stopping");
+    watch.stop().expect("stop should work");
+    log::debug!("stopped");
+    watch
+        .join()
+        .expect("no error should be reported by the polling loop");
+}
+
+#[ignore]
+#[test]
+fn stop_by_dropping() {
+    env_logger::init();
+
+    let watch = MountWatcher::new(|event| {
+        print_event(event);
+        println!("---------------");
+
+        WatchControl::Continue
+    })
+    .unwrap();
+    std::thread::sleep(Duration::from_secs(5));
+    drop(watch);
 }
 
 #[ignore]
@@ -48,6 +70,7 @@ fn watch_coalesce_print() {
         WatchControl::Stop
     })
     .unwrap();
+    watch.stop().unwrap();
     watch.join().unwrap();
 }
 
